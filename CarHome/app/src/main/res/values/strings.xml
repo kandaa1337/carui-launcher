@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="now_playing">СЕЙЧАС ИГРАЕТ</string>
+    <string name="no_music">Музыка не играет</string>
+    <string name="tap_to_open">Нажми ▶, чтобы открыть плеер</string>
+    <string name="unknown_track">Без названия</string>
+    <string name="grant_access">Разрешить доступ к музыке</string>
+    <string name="nav">Навигация</string>
+    <string name="music">Музыка</string>
+    <string name="apps">Приложения</string>
+    <string name="settings">Настройки</string>
+    <string name="back">Назад</string>
+    <string name="prev">Предыдущий</string>
+    <string name="next">Следующий</string>
+    <string name="play">Играть</string>
+    <string name="mute">Без звука</string>
+</resources>
