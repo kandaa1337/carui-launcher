@@ -7,6 +7,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: CarHome
     steps:
       - uses: actions/checkout@v4
 
@@ -25,4 +28,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: CarHome-apk
-          path: app/build/outputs/apk/release/*.apk
+          path: CarHome/app/build/outputs/apk/release/*.apk
