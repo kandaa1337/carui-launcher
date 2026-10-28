@@ -14,4 +14,7 @@
     <string name="next">Следующий</string>
     <string name="play">Играть</string>
     <string name="mute">Без звука</string>
+    <string name="pick_music_app">Выбери приложение для музыки</string>
+    <string name="music_app_saved">Музыка: %1$s</string>
+    <string name="diagnostics">Диагностика музыки</string>
 </resources>

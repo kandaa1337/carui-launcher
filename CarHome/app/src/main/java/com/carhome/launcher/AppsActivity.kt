@@ -11,6 +11,7 @@ import android.widget.BaseAdapter
 import android.widget.GridView
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
 
 /** Простая сетка всех приложений. Иконки грузятся лениво и кэшируются. */
 class AppsActivity : Activity() {
@@ -24,6 +25,10 @@ class AppsActivity : Activity() {
         setContentView(R.layout.activity_apps)
 
         findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
+
+        // Режим выбора музыкального приложения
+        val pickMusic = intent.getBooleanExtra(EXTRA_PICK_MUSIC, false)
+        if (pickMusic) findViewById<TextView>(R.id.appsTitle).setText(R.string.pick_music_app)
 
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val apps = packageManager.queryIntentActivities(intent, 0)
@@ -48,6 +53,11 @@ class AppsActivity : Activity() {
         }
         grid.setOnItemClickListener { _, _, position, _ ->
             val ai = apps[position].info.activityInfo
+            if (pickMusic) {
+                getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE).edit()
+                    .putString(MainActivity.KEY_MUSIC_APP, ai.packageName).apply()
+                Toast.makeText(this, getString(R.string.music_app_saved, apps[position].label), Toast.LENGTH_SHORT).show()
+            }
             val launch = Intent(Intent.ACTION_MAIN)
                 .addCategory(Intent.CATEGORY_LAUNCHER)
                 .setClassName(ai.packageName, ai.name)
@@ -55,5 +65,9 @@ class AppsActivity : Activity() {
             startActivity(launch)
             finish()
         }
+    }
+
+    companion object {
+        const val EXTRA_PICK_MUSIC = "pick_music"
     }
 }
