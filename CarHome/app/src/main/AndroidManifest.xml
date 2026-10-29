@@ -4,6 +4,12 @@
     <!-- Нужно, чтобы видеть список всех приложений на Android 11+ -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
+    <!-- Обложки треков с памяти магнитолы (медиатека Android) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
     <application
         android:label="CarHome"
         android:icon="@drawable/ic_launcher"

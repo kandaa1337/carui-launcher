@@ -216,6 +216,23 @@
                     android:fontFamily="sans-serif-light"
                     android:textColor="@color/text_secondary"
                     android:textSize="24sp" />
+
+                <!-- Показывается, только если CarHome ещё не главный экран -->
+                <TextView
+                    android:id="@+id/setHomeHint"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_hint"
+                    android:paddingStart="16dp"
+                    android:paddingTop="10dp"
+                    android:paddingEnd="16dp"
+                    android:paddingBottom="10dp"
+                    android:text="@string/set_as_home"
+                    android:textColor="@color/accent"
+                    android:textSize="15sp"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- ===== Громкость: вертикальная полоса, под ней mute ===== -->

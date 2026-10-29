@@ -21,4 +21,6 @@
     <string name="export_started">Сохраняю APK…</string>
     <string name="export_done">Готово: %1$d файл(ов) в Загрузки/CarHome</string>
     <string name="export_failed">Не получилось сохранить APK</string>
+    <string name="set_as_home">Сделать главным экраном</string>
+    <string name="set_home_manual">Выбери CarHome в списке «Главный экран»</string>
 </resources>

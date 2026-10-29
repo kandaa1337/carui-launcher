@@ -75,6 +75,7 @@ class MusicController(private val context: Context, private val listener: Listen
     /** Вызывать из onDestroy. */
     fun release() {
         stop()
+        btClient.unbind()
         try { context.unregisterReceiver(extReceiver) } catch (_: Exception) {}
     }
 
@@ -94,7 +95,11 @@ class MusicController(private val context: Context, private val listener: Listen
         // Медиа-сервис Bluetooth самого Android: в нём время трека и (если телефон умеет) обложка
         connectBtBrowser()
         // Попросим Bluetooth-сервис магнитолы прислать текущий трек заново
-        if (isNwd) context.sendBroadcast(Intent(NWD_QUERY_BT_ID3))
+        if (isNwd) {
+            context.sendBroadcast(Intent(NWD_QUERY_BT_ID3))
+            btClient.queryId3()
+            syncBtPlaying()
+        }
         refresh()
     }
 
@@ -337,20 +342,51 @@ class MusicController(private val context: Context, private val listener: Listen
         var playing = false
         var posMs = 0L
         var durMs = 0L
+        var localId: Long? = null       // номер трека в медиатеке (для обложки)
     }
 
     private val ext = ExtState()
     private var shownExtKey: String? = null
+
+    // Обложка для музыки с памяти: последний загруженный трек и его картинка
+    private var localArtKey: String? = null
+    private var localArt: Bitmap? = null
+    private var localArtLoading: String? = null
 
     private fun publishExt() {
         val key = "${ext.source}|${ext.title}|${ext.artist}"
         if (key != shownExtKey) {
             shownExtKey = key
             lastKey = null
-            listener.onTrackChanged(Track(ext.title, ext.artist, null, ext.durMs, ext.pkg))
+            val art = if (ext.source == SRC_LOCAL && localArtKey == key) localArt else null
+            val track = Track(ext.title, ext.artist, art, ext.durMs, ext.pkg)
+            listener.onTrackChanged(track)
+            if (ext.source == SRC_LOCAL && ext.title != null && localArtKey != key) loadLocalArt(key, track)
         }
         listener.onPlayStateChanged(ext.playing)
         listener.onProgress(ext.posMs, ext.durMs)
+    }
+
+    private fun loadLocalArt(key: String, track: Track) {
+        if (localArtLoading == key) return
+        localArtLoading = key
+        val id = ext.localId
+        Thread {
+            val bmp = try { LocalArtLoader.load(context, id, track.title, track.artist) } catch (_: Exception) { null }
+            main.post {
+                localArtLoading = null
+                localArtKey = key
+                localArt = bmp
+                if (bmp != null && shownExtKey == key && visible) listener.onTrackChanged(track.copy(art = bmp))
+            }
+        }.start()
+    }
+
+    /** Разрешили доступ к музыке — пробуем загрузить обложку текущего трека заново. */
+    fun onMediaPermissionGranted() {
+        localArtKey = null
+        shownExtKey = null
+        refresh()
     }
 
     private val extReceiver = object : BroadcastReceiver() {
@@ -367,6 +403,8 @@ class MusicController(private val context: Context, private val listener: Listen
                     switchTo(SRC_BT, NWD_BT_MUSIC_APP)
                     ext.title = e?.getString("extra_avrcp_id3_title")?.takeIf { it.isNotBlank() }
                     ext.artist = e?.getString("extra_avrcp_id3_artist")?.takeIf { it.isNotBlank() }
+                    // Сигнал "играет" модуль шлёт только при переключении — уточняем напрямую
+                    btClient.isPlaying()?.let { ext.playing = it }
                 }
                 BT_PLAY -> { switchTo(SRC_BT, NWD_BT_MUSIC_APP); ext.playing = true }
                 BT_PAUSE -> { if (ext.source == SRC_BT) ext.playing = false }
@@ -408,6 +446,8 @@ class MusicController(private val context: Context, private val listener: Listen
                     if (title != null) {
                         ext.title = title
                         ext.artist = e?.getString("artist")
+                        val rawId = e?.get("id")
+                        ext.localId = (rawId as? Number)?.toLong() ?: rawId?.toString()?.toLongOrNull()
                     }
                     if (playing != null) ext.playing = playing
                 }
@@ -417,7 +457,14 @@ class MusicController(private val context: Context, private val listener: Listen
     }
 
     // Регистрация — строго после объявления extReceiver (порядок инициализации в Kotlin)
+    /** Прямое подключение к Bluetooth-сервису NWD — для кнопок, как у родного BT Music */
+    private val btClient = NwdBtClient(context)
+
     init {
+        if (isNwd && isInstalled(NwdBtClient.PACKAGE)) {
+            btClient.onConnected = { syncBtPlaying() }
+            btClient.bind()
+        }
         val filter = IntentFilter().apply { EXT_ACTIONS.forEach { addAction(it) } }
         if (Build.VERSION.SDK_INT >= 33) {
             context.registerReceiver(extReceiver, filter, Context.RECEIVER_EXPORTED)
@@ -434,6 +481,7 @@ class MusicController(private val context: Context, private val listener: Listen
         ext.artist = null
         ext.posMs = 0
         ext.durMs = 0
+        ext.localId = null
     }
 
     private fun clearExt() {
@@ -458,23 +506,51 @@ class MusicController(private val context: Context, private val listener: Listen
 
     fun currentPackage(): String? = if (useExt()) ext.pkg else controller?.packageName ?: ext.pkg
 
-    fun playPause() = command(CMD_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) { c ->
+    fun playPause() = command(Cmd.PLAY_PAUSE) { c ->
         if (c.playbackState?.state == PlaybackState.STATE_PLAYING) c.transportControls.pause()
         else c.transportControls.play()
     }
 
-    fun next() = command(CMD_NEXT, KeyEvent.KEYCODE_MEDIA_NEXT) { it.transportControls.skipToNext() }
+    fun next() = command(Cmd.NEXT) { it.transportControls.skipToNext() }
 
-    fun previous() = command(CMD_PREV, KeyEvent.KEYCODE_MEDIA_PREVIOUS) { it.transportControls.skipToPrevious() }
+    fun previous() = command(Cmd.PREV) { it.transportControls.skipToPrevious() }
 
-    private fun command(nwdCmd: Int, keyCode: Int, session: (MediaController) -> Unit) {
+    private enum class Cmd(val btService: Int, val nwdBroadcast: Int, val keyCode: Int) {
+        PLAY_PAUSE(NwdBtClient.CMD_PLAY_PAUSE, CMD_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE),
+        NEXT(NwdBtClient.CMD_NEXT, CMD_NEXT, KeyEvent.KEYCODE_MEDIA_NEXT),
+        PREV(NwdBtClient.CMD_PREV, CMD_PREV, KeyEvent.KEYCODE_MEDIA_PREVIOUS),
+    }
+
+    private fun command(cmd: Cmd, session: (MediaController) -> Unit) {
         val c = controller
-        if (c != null && !useExt()) return session(c)
+        // Сторонний плеер (Spotify и т.п.), который сейчас главный — управляем им напрямую
+        if (c != null && c.packageName != ANDROID_BT_PACKAGE && !useExt()) return session(c)
 
         when (nwdTarget()) {
-            SRC_BT -> send(Intent(NWD_BT_CMD).putExtra("extra_command", nwdCmd))
-            SRC_LOCAL -> send(Intent(NWD_LOCAL_CMD).putExtra("extra_command", nwdCmd))
-            else -> sendKey(keyCode)
+            SRC_BT -> {
+                // Как кнопки BT Music: напрямую в Bluetooth-сервис. Если не вышло — запасные пути.
+                if (btClient.playControl(cmd.btService)) {
+                    main.postDelayed({ syncBtPlaying() }, 700)
+                    return
+                }
+                if (c != null) return session(c)
+                send(Intent(NWD_BT_CMD).putExtra("extra_command", cmd.nwdBroadcast))
+            }
+            SRC_LOCAL -> send(Intent(NWD_LOCAL_CMD).putExtra("extra_command", cmd.nwdBroadcast))
+            else -> if (c != null) session(c) else sendKey(cmd.keyCode)
+        }
+    }
+
+    /** Узнаём у Bluetooth-сервиса NWD, играет ли музыка, и обновляем экран. */
+    private fun syncBtPlaying() {
+        val playing = btClient.isPlaying() ?: return
+        if (ext.source == null && playing) {
+            switchTo(SRC_BT, NWD_BT_MUSIC_APP)
+            btClient.queryId3()
+        }
+        if (ext.source == SRC_BT && ext.playing != playing) {
+            ext.playing = playing
+            refresh()
         }
     }
 
@@ -485,6 +561,7 @@ class MusicController(private val context: Context, private val listener: Listen
             SOURCE_BT_MUSIC -> SRC_BT
             SOURCE_MUSIC -> SRC_LOCAL
             else -> ext.source?.takeIf { it != SRC_OTHER }
+                ?: if (btClient.isPlaying() == true) SRC_BT else null
         }
     }
 
@@ -517,6 +594,8 @@ class MusicController(private val context: Context, private val listener: Listen
             "${Settings.System.getInt(context.contentResolver, "mcu_mute_state", -1)}")
         appendLine("Громкость Android (музыка): " +
             "${audio.getStreamVolume(AudioManager.STREAM_MUSIC)}/${audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)}")
+        appendLine("BT-сервис NWD (кнопки): ${btClient.status}" +
+            (btClient.isPlaying()?.let { if (it) ", играет" else ", не играет" } ?: ""))
         appendLine("Bluetooth-медиасервис Android: $btBrowserStatus")
         btController?.let { bc ->
             val md = bc.metadata
@@ -554,6 +633,7 @@ class MusicController(private val context: Context, private val listener: Listen
 
         // Найдено в прошивке NWD (com.bt.bc03, com.nwd.bt.music, com.nwd.android.music.ui)
         private const val NWD_BT_SERVICE = "com.bt.bc03"
+        private const val ANDROID_BT_PACKAGE = "com.android.bluetooth"
         private const val NWD_BT_MUSIC_APP = "com.nwd.bt.music"
         private const val NWD_LOCAL_MUSIC_APP = "com.nwd.android.music.ui"
 

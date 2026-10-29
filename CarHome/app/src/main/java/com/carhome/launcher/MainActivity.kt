@@ -41,6 +41,7 @@ class MainActivity : Activity(), MusicController.Listener {
     private lateinit var playPause: ImageButton
     private lateinit var permissionHint: TextView
     private lateinit var dateView: TextView
+    private lateinit var setHomeHint: TextView
     private lateinit var volumeBar: VolumeSlider
     private lateinit var muteButton: ImageButton
 
@@ -67,6 +68,8 @@ class MainActivity : Activity(), MusicController.Listener {
         playPause = findViewById(R.id.btnPlayPause)
         permissionHint = findViewById(R.id.permissionHint)
         dateView = findViewById(R.id.date)
+        setHomeHint = findViewById(R.id.setHomeHint)
+        setHomeHint.setOnClickListener { requestHomeRole() }
 
         music = MusicController(this, this)
 
@@ -97,6 +100,10 @@ class MainActivity : Activity(), MusicController.Listener {
         }
 
         setupVolume()
+        // Доступ к музыке нужен, чтобы показывать обложки треков с памяти магнитолы
+        if (!LocalArtLoader.hasPermission(this)) {
+            requestPermissions(arrayOf(LocalArtLoader.permission()), REQ_MEDIA)
+        }
         onTrackChanged(null)
         onPlayStateChanged(false)
     }
@@ -105,6 +112,7 @@ class MainActivity : Activity(), MusicController.Listener {
         super.onResume()
         hideSystemBars()
         permissionHint.visibility = if (music.hasPermission()) View.GONE else View.VISIBLE
+        setHomeHint.visibility = if (isDefaultHome()) View.GONE else View.VISIBLE
         music.start()
         volume.start()
         updateDate()
@@ -131,6 +139,60 @@ class MainActivity : Activity(), MusicController.Listener {
     // Кнопка "Назад" на главном экране ничего не делает
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {}
+
+    override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, results: IntArray) {
+        super.onRequestPermissionsResult(code, perms, results)
+        if (code == REQ_MEDIA && LocalArtLoader.hasPermission(this)) music.onMediaPermissionGranted()
+    }
+
+    // ---------- Главный экран по умолчанию ----------
+
+    /** Что Android сейчас откроет по кнопке "Домой" */
+    private fun isDefaultHome(): Boolean {
+        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val info = packageManager.resolveActivity(home, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+        return info?.activityInfo?.packageName == packageName
+    }
+
+    /**
+     * На Android 10+ главный экран — это системная "роль". Просим её официальным диалогом,
+     * если не вышло — открываем системный список главных экранов.
+     */
+    private fun requestHomeRole() {
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val rm = getSystemService(android.app.role.RoleManager::class.java)
+            if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME) &&
+                !rm.isRoleHeld(android.app.role.RoleManager.ROLE_HOME)
+            ) {
+                try {
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_HOME), REQ_HOME)
+                    return
+                } catch (_: Exception) { }
+            }
+        }
+        openHomeSettings()
+    }
+
+    private fun openHomeSettings() {
+        Toast.makeText(this, R.string.set_home_manual, Toast.LENGTH_LONG).show()
+        for (action in listOf(Settings.ACTION_HOME_SETTINGS, Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)) {
+            try {
+                startActivity(Intent(action))
+                return
+            } catch (_: Exception) { }
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_HOME) {
+            DebugLog.add("главный экран: ответ $resultCode, сейчас ${if (isDefaultHome()) "CarHome" else "другой"}")
+            if (!isDefaultHome()) openHomeSettings()
+        }
+    }
 
     // ---------- Громкость ----------
 
@@ -316,7 +378,12 @@ class MainActivity : Activity(), MusicController.Listener {
             .filter { DIAG_PATTERN.containsMatchIn(it.packageName) }
             .joinToString("\n") { "  ${it.packageName} — ${pm.getApplicationLabel(it)}" }
             .ifEmpty { "  —" }
-        val text = music.describe() +
+        val homeInfo = packageManager.resolveActivity(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
+            android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
+        )?.activityInfo
+        val text = "Главный экран сейчас: ${homeInfo?.packageName ?: "—"}/${homeInfo?.name ?: ""}\n" +
+            music.describe() +
             "\nВыбранное муз. приложение: ${prefs.getString(KEY_MUSIC_APP, null) ?: "—"}" +
             "\n\nПриложения (bt/music/media):\n$related" +
             "\n\nПоследние события:\n${DebugLog.dump()}"
@@ -346,6 +413,8 @@ class MainActivity : Activity(), MusicController.Listener {
 
     companion object {
         const val PREFS = "launcher"
+        private const val REQ_MEDIA = 10
+        private const val REQ_HOME = 11
         const val KEY_MUSIC_APP = "music_app"
         private val DIAG_PATTERN = Regex("bt|blue|music|audio|media|a2dp|player", RegexOption.IGNORE_CASE)
         private val DEFAULT_COLOR = Color.rgb(0xC2, 0x7A, 0x2A) // тёплый янтарь, когда нет обложки
