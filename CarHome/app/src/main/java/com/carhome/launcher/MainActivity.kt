@@ -115,6 +115,11 @@ class MainActivity : Activity(), MusicController.Listener {
         })
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        music.release() // сигналы магнитолы слушаем всю жизнь лаунчера — тут отписываемся
+    }
+
     override fun onPause() {
         super.onPause()
         // Пока лаунчер не на экране — ничего не обновляем и не тратим ресурсы
