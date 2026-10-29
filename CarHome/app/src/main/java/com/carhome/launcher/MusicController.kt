@@ -266,6 +266,13 @@ class MusicController(private val context: Context, private val listener: Listen
     fun describe(): String = buildString {
         appendLine("Доступ к уведомлениям: ${if (hasPermission()) "есть" else "НЕТ"}")
         appendLine("Музыка играет (AudioManager): ${if (audio.isMusicActive) "да" else "нет"}")
+        val streams = listOf(
+            "музыка" to AudioManager.STREAM_MUSIC, "звонок" to AudioManager.STREAM_RING,
+            "система" to AudioManager.STREAM_SYSTEM, "вызов" to AudioManager.STREAM_VOICE_CALL,
+            "будильник" to AudioManager.STREAM_ALARM, "уведомл." to AudioManager.STREAM_NOTIFICATION,
+        )
+        appendLine("Громкость: " + streams.joinToString { (n, st) ->
+            "$n ${audio.getStreamVolume(st)}/${audio.getStreamMaxVolume(st)}" })
         appendLine()
         appendLine("Медиасессии:")
         val sessions = safeSessions()

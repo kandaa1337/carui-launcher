@@ -291,6 +291,20 @@ class MainActivity : Activity(), MusicController.Listener {
 
     // ---------- Диагностика (долгое нажатие на обложку) ----------
 
+    /** Копирование идёт в фоне, чтобы не подвисал экран. */
+    private fun exportApks() {
+        Toast.makeText(this, R.string.export_started, Toast.LENGTH_SHORT).show()
+        Thread {
+            val saved = try { ApkExporter.export(applicationContext) } catch (e: Exception) { emptyList() }
+            runOnUiThread {
+                val msg = if (saved.isEmpty()) getString(R.string.export_failed)
+                else getString(R.string.export_done, saved.size)
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                DebugLog.add("export: ${saved.joinToString().ifEmpty { "ничего" }}")
+            }
+        }.start()
+    }
+
     private fun showDiagnostics() {
         val pm = packageManager
         val related = pm.getInstalledApplications(0)
@@ -312,6 +326,7 @@ class MainActivity : Activity(), MusicController.Listener {
             .setTitle(R.string.diagnostics)
             .setView(ScrollView(this).apply { addView(tv) })
             .setPositiveButton(android.R.string.ok, null)
+            .setNeutralButton(R.string.export_apk) { _, _ -> exportApks() }
             .show()
     }
 

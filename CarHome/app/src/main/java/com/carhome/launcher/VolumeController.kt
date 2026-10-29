@@ -32,6 +32,8 @@ class VolumeController(private val context: Context, private val onChange: (leve
     // Громкость поменяли снаружи (кнопки на руле, ручка, другое приложение)
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
+            DebugLog.add("volume: поток ${i.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1)} → " +
+                "${i.getIntExtra("android.media.EXTRA_VOLUME_STREAM_VALUE", -1)}")
             if (i.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1) != stream) return
             if (level > 0 && savedLevel >= 0) savedLevel = -1 // звук вернули вручную — mute снят
             publish()
@@ -56,6 +58,7 @@ class VolumeController(private val context: Context, private val onChange: (leve
 
     /** Ползунок. Флаг 0 — без системного всплывающего окна громкости. */
     fun set(value: Int) {
+        DebugLog.add("volume: ставлю $value/$max")
         val v = value.coerceIn(0, max)
         if (v == level) return
         if (v > 0) savedLevel = -1
@@ -64,6 +67,7 @@ class VolumeController(private val context: Context, private val onChange: (leve
     }
 
     fun toggleMute() {
+        DebugLog.add("volume: mute нажат")
         if (isMuted) {
             val restore = savedLevel.takeIf { it > 0 } ?: (max * 0.3f).toInt().coerceAtLeast(1)
             savedLevel = -1

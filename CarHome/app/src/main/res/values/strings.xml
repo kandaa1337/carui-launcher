@@ -17,4 +17,8 @@
     <string name="pick_music_app">Выбери приложение для музыки</string>
     <string name="music_app_saved">Музыка: %1$s</string>
     <string name="diagnostics">Диагностика музыки</string>
+    <string name="export_apk">Сохранить APK</string>
+    <string name="export_started">Сохраняю APK…</string>
+    <string name="export_done">Готово: %1$d файл(ов) в Загрузки/CarHome</string>
+    <string name="export_failed">Не получилось сохранить APK</string>
 </resources>
